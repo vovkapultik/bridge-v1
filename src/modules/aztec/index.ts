@@ -1,18 +1,18 @@
 import {
-  Fq,
-  getSchnorrAccount,
-  PXE,
   AccountWalletWithPrivateKey,
-  createPXEClient,
+  AztecAddress, computeAuthWitMessageHash, computeMessageSecretHash,
+  createPXEClient, ExtendedNote,
+  Fq,
+  Fr,
   getSandboxAccountsWallets,
-  AztecAddressLike, AztecAddress
+  getSchnorrAccount, Note
 } from "@aztec/aztec.js";
 import { CompleteAddress } from "@aztec/circuits.js";
 // @ts-ignore
 import { TokenContract } from "@aztec/noir-contracts/types";
-import { type } from "os";
 
 const pxe = createPXEClient(process.env.PXE_URL || "http://localhost:8080");
+const accounts: AccountWalletWithPrivateKey[] = [];
 
 
 export async function getOwnerWallet() {
@@ -39,46 +39,26 @@ export async function generateWallet() {
     signingPrivateKey
   ).waitDeploy();
 
+  accounts.push(wallet)
+
   return {
-    encryptionPrivateKey: encryptionPrivateKey.toString(),
-    signingPrivateKey: signingPrivateKey.toString(),
-    completeAddress: {
-      address: wallet.getCompleteAddress().address.toString(),
-      partialAddress: wallet.getCompleteAddress().partialAddress.toString(),
-      publicKey: wallet.getCompleteAddress().publicKey.toString()
-    }
+    id: accounts.length - 1,
+    address: wallet.getAddress().toString()
   }
 }
 
-export async function loadWallet(encryptionPrivateKey: Fq, signingPrivateKey: Fq, completeAddress: CompleteAddress) {
-  const wallet = await getSchnorrAccount(
-    pxe,
-    new Fq(Number(encryptionPrivateKey)),
-    new Fq(Number(signingPrivateKey)),
-    new CompleteAddress(completeAddress.address, completeAddress.publicKey, completeAddress.partialAddress)
-  ).register();
-
-  console.log(wallet);
-  console.log(`getAddress: ${wallet.getAddress()}`);
-  console.log(wallet.getCompleteAddress());
-  console.log(`-----------------------------------`);
-  const ownerWallet = await getOwnerWallet();
-  console.log(ownerWallet);
-  console.log(`getAddress: ${ownerWallet.getAddress()}`);
-  console.log(ownerWallet.getCompleteAddress());
-  console.log(`-----------------------------------`);
-
-  return wallet
+export async function loadWallet(id: number) {
+  return accounts[id]
 }
 
-export async function getPublicBalances (encryptionPrivateKey: Fq, signingPrivateKey: Fq, completeAddress: CompleteAddress) {
-  const wallet = await loadWallet(encryptionPrivateKey, signingPrivateKey, completeAddress);
+export async function getPublicBalances (id: number) {
+  const wallet = await loadWallet(id);
 
   const WMATIC = await TokenContract.at(AztecAddress.fromString(process.env.WMATIC_ADDRESS), wallet);
   const USDT = await TokenContract.at(AztecAddress.fromString(process.env.USDT_ADDRESS), wallet);
 
-  const wmaticBalance = await WMATIC.methods.balance_of_public(wallet.getCompleteAddress().address).view();
-  const usdtBalance = await USDT.methods.balance_of_public(wallet.getCompleteAddress().address).view();
+  const wmaticBalance = await WMATIC.methods.balance_of_public(wallet.getAddress()).view();
+  const usdtBalance = await USDT.methods.balance_of_public(wallet.getAddress()).view();
 
   return {
     WMATIC: wmaticBalance.toString(),
@@ -86,14 +66,14 @@ export async function getPublicBalances (encryptionPrivateKey: Fq, signingPrivat
   }
 }
 
-export async function getPrivateBalances (encryptionPrivateKey: Fq, signingPrivateKey: Fq, completeAddress: CompleteAddress) {
-  const wallet = await loadWallet(encryptionPrivateKey, signingPrivateKey, completeAddress);
+export async function getPrivateBalances (id: number) {
+  const wallet = await loadWallet(id);
 
   const WMATIC = await TokenContract.at(AztecAddress.fromString(process.env.WMATIC_ADDRESS), wallet);
   const USDT = await TokenContract.at(AztecAddress.fromString(process.env.USDT_ADDRESS), wallet);
 
-  const wmaticBalance = await WMATIC.methods.balance_of_private(wallet.getCompleteAddress().address).view();
-  const usdtBalance = await USDT.methods.balance_of_private(wallet.getCompleteAddress().address).view();
+  const wmaticBalance = await WMATIC.methods.balance_of_private(wallet.getAddress()).view();
+  const usdtBalance = await USDT.methods.balance_of_private(wallet.getAddress()).view();
 
   return {
     WMATIC: wmaticBalance.toString(),
@@ -101,8 +81,8 @@ export async function getPrivateBalances (encryptionPrivateKey: Fq, signingPriva
   }
 }
 
-export async function mintPublic (token: string, amount: number, encryptionPrivateKey: Fq, signingPrivateKey: Fq, completeAddress: CompleteAddress) {
-  const wallet = await loadWallet(encryptionPrivateKey, signingPrivateKey, completeAddress);
+export async function mintPublic (token: string, amount: number, id: number) {
+  const wallet = await loadWallet(id);
   const ownerWallet = await getOwnerWallet();
 
   let tokenContract;
@@ -120,13 +100,56 @@ export async function mintPublic (token: string, amount: number, encryptionPriva
     }
   }
   try {
-    const tx = tokenContract.methods.mint_public(wallet.getAddress(), amount).send();
-    const receipt = await tx.wait();
-    console.log(receipt.status)
+    await tokenOwnerContract.methods.set_minter(wallet.getAddress(), true).send().wait();
+    await tokenContract.methods.mint_public(wallet.getAddress(), amount).send().wait();
+    await tokenOwnerContract.methods.set_minter(wallet.getAddress(), false).send().wait();
 
-    // await tokenOwnerContract.methods.set_minter(wallet.getAddress(), true).send().wait();
-    // await tokenContract.methods.mint_public(wallet.getAddress(), BigInt(amount)).send().wait();
-    // await tokenOwnerContract.methods.set_minter(wallet.getAddress(), false).send().wait();
+    return {
+      status: true
+    }
+  } catch (e) {
+    return {
+      status: false,
+      reason: e
+    }
+  }
+}
+
+export async function mintPrivate (token: string, amount: number, id: number) {
+  const wallet = await loadWallet(id);
+  const ownerWallet = await getOwnerWallet();
+
+  let tokenContract;
+  let tokenOwnerContract;
+  if (token.toLowerCase() === 'wmatic') {
+    tokenContract = await TokenContract.at(AztecAddress.fromString(process.env.WMATIC_ADDRESS), wallet);
+    tokenOwnerContract = await TokenContract.at(AztecAddress.fromString(process.env.WMATIC_ADDRESS), ownerWallet);
+  } else if (token.toLowerCase() === 'usdt') {
+    tokenContract = await TokenContract.at(AztecAddress.fromString(process.env.USDT_ADDRESS), wallet);
+    tokenOwnerContract = await TokenContract.at(AztecAddress.fromString(process.env.USDT_ADDRESS), ownerWallet);
+  } else {
+    return {
+      status: false,
+      reason: 'No such token'
+    }
+  }
+  try {
+    await tokenOwnerContract.methods.set_minter(wallet.getAddress(), true).send().wait();
+
+    const secret = Fr.random();
+    const secretHash = computeMessageSecretHash(secret);
+
+    const receipt = await tokenContract.methods.mint_private(BigInt(amount), secretHash).send().wait();
+
+    const pendingShieldsStorageSlot = new Fr(BigInt(5));
+    const note = new Note([new Fr(BigInt(amount)), secretHash]);
+    await pxe.addNote(new ExtendedNote(note, wallet.getAddress(), tokenContract.address, pendingShieldsStorageSlot, receipt.txHash));
+
+    // Make the tokens spendable by redeeming them using the secret
+    // (converts the "pending shield note" created above to a "token note")
+    await tokenContract.methods.redeem_shield(wallet.getAddress(), BigInt(amount), secret).send().wait();
+
+    await tokenOwnerContract.methods.set_minter(wallet.getAddress(), false).send().wait();
 
     return {
       status: true
@@ -140,31 +163,8 @@ export async function mintPublic (token: string, amount: number, encryptionPriva
   }
 }
 
-export async function mintPrivate (token: string, amount: number, encryptionPrivateKey: Fq, signingPrivateKey: Fq, completeAddress: CompleteAddress) {
-  const wallet = await loadWallet(encryptionPrivateKey, signingPrivateKey, completeAddress);
-
-  // let tokenContract;
-  // if (token.toLowerCase() === 'wmatic') {
-  //   tokenContract = await TokenContract.at(AztecAddress.fromString(process.env.WMATIC_ADDRESS), wallet);
-  // } else if (token.toLowerCase() === 'usdt') {
-  //   tokenContract = await TokenContract.at(AztecAddress.fromString(process.env.USDT_ADDRESS), wallet);
-  // } else {
-  //   return {
-  //       status: false,
-  //       reason: 'No such token'
-  //     }
-  // }
-  //
-  // tokenContract.methods.shield(wallet.getAddress(), amount, )
-  //
-  // return {
-  //   WMATIC: wmaticBalance.toString(),
-  //   USDT: usdtBalance.toString()
-  // }
-}
-
-export async function shieldBalance (token: string, amount: number, encryptionPrivateKey: Fq, signingPrivateKey: Fq, completeAddress: CompleteAddress) {
-  const wallet = await loadWallet(encryptionPrivateKey, signingPrivateKey, completeAddress);
+export async function shieldBalance (token: string, amount: number, id: number) {
+  const wallet = await loadWallet(id);
 
   let tokenContract;
   if (token.toLowerCase() === 'wmatic') {
@@ -177,13 +177,61 @@ export async function shieldBalance (token: string, amount: number, encryptionPr
       reason: 'No such token'
     }
   }
+  try {
+    // Nonce should be 0 when acting on behalf of yourself
+    // const nonce = Fr.random();
+    const nonce = 0;
+    const secret = Fr.random();
+    const secretHash = computeMessageSecretHash(secret);
 
-  return { status: true }
+    // We need to compute the message we want to sign and add it to the wallet as approved
+    const transaction = tokenContract.methods.shield(wallet.getAddress(), amount, secretHash, nonce);
+    const messageHash = computeAuthWitMessageHash(wallet.getAddress(), transaction.request());
+    await wallet.setPublicAuth(messageHash, true).send().wait();
 
-  // tokenContract.methods.shield(wallet.getAddress(), amount, )
+    const receipt = await transaction.send().wait();
 
-  // return {
-  //   WMATIC: wmaticBalance.toString(),
-  //   USDT: usdtBalance.toString()
-  // }
+    const pendingShieldsStorageSlot = new Fr(BigInt(5));
+    const note = new Note([new Fr(BigInt(amount)), secretHash]);
+    await pxe.addNote(new ExtendedNote(note, wallet.getAddress(), tokenContract.address, pendingShieldsStorageSlot, receipt.txHash));
+
+    // Make the tokens spendable by redeeming them using the secret
+    // (converts the "pending shield note" created above to a "token note")
+    await tokenContract.methods.redeem_shield(wallet.getAddress(), BigInt(amount), secret).send().wait();
+
+    return { status: true }
+  } catch (e) {
+    console.log(e);
+    return {
+      status: false,
+      reason: e
+    }
+  }
+}
+
+export async function unshieldBalance (token: string, amount: number, id: number) {
+  const wallet = await loadWallet(id);
+
+  let tokenContract;
+  if (token.toLowerCase() === 'wmatic') {
+    tokenContract = await TokenContract.at(AztecAddress.fromString(process.env.WMATIC_ADDRESS), wallet);
+  } else if (token.toLowerCase() === 'usdt') {
+    tokenContract = await TokenContract.at(AztecAddress.fromString(process.env.USDT_ADDRESS), wallet);
+  } else {
+    return {
+      status: false,
+      reason: 'No such token'
+    }
+  }
+  try {
+    await tokenContract.methods.unshield(wallet.getAddress(), wallet.getAddress(), amount, 0).send().wait();
+
+    return { status: true }
+  } catch (e) {
+    console.log(e);
+    return {
+      status: false,
+      reason: e
+    }
+  }
 }

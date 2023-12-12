@@ -7,8 +7,8 @@ import {
   getOwnerWallet,
   getPublicBalances,
   getPrivateBalances,
-  loadWallet,
   shieldBalance,
+  unshieldBalance,
   mintPublic,
   mintPrivate,
 } from "./modules/aztec";
@@ -40,86 +40,44 @@ app.post('/deployTokens', async (req: Request, res: Response) => {
 
 app.post('/generateWallet', async (req: Request, res: Response) => {
   const wallet = await generateWallet();
-  console.log(`New account deployed at ${wallet.completeAddress.address}`);
 
   res.send(wallet);
 });
 
-app.post('/loadWallet', async (req: Request, res: Response) => {
-  const wallet = await loadWallet(
-    req.body.encryptionPrivateKey,
-    req.body.signingPrivateKey,
-    req.body.completeAddress
-  );
-  res.send({
-    status: true
-  });
-});
-
 app.post('/publicBalances', async (req: Request, res: Response) => {
-  const balances = await getPublicBalances(
-      req.body.encryptionPrivateKey,
-      req.body.signingPrivateKey,
-      req.body.completeAddress
-  );
+  const balances = await getPublicBalances(req.body.walletId);
 
-  res.send({
-    balances
-  });
+  res.send(balances);
 });
 
 app.post('/privateBalances', async (req: Request, res: Response) => {
-  const balances = await getPrivateBalances(
-    req.body.encryptionPrivateKey,
-    req.body.signingPrivateKey,
-    req.body.completeAddress
-  );
+  const balances = await getPrivateBalances(req.body.walletId);
 
-  res.send({
-    balances
-  });
+  res.send(balances);
 });
 
 app.post('/mintPublic', async (req: Request, res: Response) => {
-  const status = await mintPublic(
-    req.body.token,
-    req.body.amount,
-    req.body.encryptionPrivateKey,
-    req.body.signingPrivateKey,
-    req.body.completeAddress
-  );
+  const status = await mintPublic(req.body.token, req.body.amount, req.body.walletId);
 
-  res.send({
-    status
-  });
+  res.send(status);
 });
 
 app.post('/mintPrivate', async (req: Request, res: Response) => {
-  const status = await mintPrivate(
-    req.body.token,
-    req.body.amount,
-    req.body.encryptionPrivateKey,
-    req.body.signingPrivateKey,
-    req.body.completeAddress
-  );
+  const status = await mintPrivate(req.body.token, req.body.amount, req.body.walletId);
 
-  res.send({
-    status
-  });
+  res.send(status);
 });
 
 app.post('/shieldBalance', async (req: Request, res: Response) => {
-  const balances = await shieldBalance(
-    req.body.token,
-    req.body.amount,
-    req.body.encryptionPrivateKey,
-    req.body.signingPrivateKey,
-    req.body.completeAddress
-  );
+  const balances = await shieldBalance(req.body.token, req.body.amount, req.body.walletId);
 
-  res.send({
-    balances
-  });
+  res.send(balances);
+});
+
+app.post('/unshieldBalance', async (req: Request, res: Response) => {
+  const balances = await unshieldBalance(req.body.token, req.body.amount, req.body.walletId);
+
+  res.send(balances);
 });
 
 app.listen(port, async () => {
