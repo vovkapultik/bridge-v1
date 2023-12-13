@@ -44,6 +44,16 @@ app.post('/generateWallet', async (req: Request, res: Response) => {
   res.send(wallet);
 });
 
+app.post('/aztecBalances', async (req: Request, res: Response) => {
+  const publicBalances = await getPublicBalances(req.body.walletId);
+  const privateBalances = await getPrivateBalances(req.body.walletId);
+
+  res.send({
+    public: publicBalances,
+    private: privateBalances
+  });
+});
+
 app.post('/publicBalances', async (req: Request, res: Response) => {
   const balances = await getPublicBalances(req.body.walletId);
 
@@ -55,6 +65,17 @@ app.post('/privateBalances', async (req: Request, res: Response) => {
 
   res.send(balances);
 });
+
+app.get('/bridgeBalances', async (req: Request, res: Response) => {
+  // const balances = await getPrivateBalances(req.body.walletId);
+  //
+  // TODO: endpoint!
+  res.send({
+    WMATIC: "0",
+    USDT: "0"
+  });
+});
+
 
 app.post('/mintPublic', async (req: Request, res: Response) => {
   const status = await mintPublic(req.body.token, req.body.amount, req.body.walletId);

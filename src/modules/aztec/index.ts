@@ -42,8 +42,8 @@ export async function generateWallet() {
   accounts.push(wallet)
 
   return {
-    id: accounts.length - 1,
-    address: wallet.getAddress().toString()
+    walletId: accounts.length - 1,
+    walletAddress: wallet.getAddress().toString()
   }
 }
 
