@@ -1,4 +1,5 @@
 import express, { Application, Request, Response } from "express";
+import cors from "cors";
 import dotenv from "dotenv";
 
 import {
@@ -19,7 +20,8 @@ dotenv.config();
 const app: Application = express();
 const port = process.env.PORT || 8000;
 
-app.use(express.json())
+app.use(express.json());
+app.use(cors());
 
 app.get('/ownerWallet', async (req: Request, res: Response) => {
   const address = (await getOwnerWallet()).getAddress().toString();
