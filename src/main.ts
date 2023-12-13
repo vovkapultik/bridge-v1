@@ -47,6 +47,7 @@ app.post('/generateWallet', async (req: Request, res: Response) => {
 });
 
 app.post('/aztecBalances', async (req: Request, res: Response) => {
+  console.log(`POST to /aztecBalances with ${JSON.stringify(req.body)}`);
   const publicBalances = await getPublicBalances(req.body.walletId);
   const privateBalances = await getPrivateBalances(req.body.walletId);
 

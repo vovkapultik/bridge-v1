@@ -48,6 +48,7 @@ export async function generateWallet() {
 }
 
 export async function loadWallet(id: number) {
+  console.log(`loading ${accounts[id].getAddress()}`)
   return accounts[id]
 }
 
